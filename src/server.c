@@ -10,32 +10,66 @@
 #define SERVER_IP "127.0.0.1"
 #define PORT 9909
 #define MAX_CONNECTION 5
-#define BUFFER 1024
+#define BUFFER_SIZE 1024
 
 
 struct BufferQueue msgQ;
+int clients[MAX_CONNECTION] = {0};
 
+void* send_msg(){
 
-void* send_msg();
+    while(1){
+        if (msgQ.head==NULL){
+            sleep(1);
+            queueDisplay(&msgQ);
+            continue;
+        }
+
+        while(msgQ.head!=NULL){
+            
+            char* buffer = queuePop(&msgQ);
+
+            for(int i=0;i<MAX_CONNECTION;i++){
+                if (clients[i]==0){
+                    continue;
+                }
+                send(clients[i],buffer,strlen(buffer),0);
+
+            }
+            queueDisplay(&msgQ);
+        }
+
+    }
+
+};
 
 void* recv_msg(void *client_sock_arg){
 
     int client_sock = *((int *)client_sock_arg);
+    int clientIndx;
 
+    for(int i=0;i<=MAX_CONNECTION;i++){
+        if(clients[i]==0){
+            clients[i] = client_sock;
+            clientIndx = i;
+            break;
+        }
+    }
     while(1){
         char buffer[1024];
         bzero(buffer, 1024);
         recv(client_sock, buffer, 1024, 0);
         if(strcmp(buffer,"exit")==0){
-            printf("[-]Client Disconnected\n");
+            printf("[-]Client %d Disconnected\n",clients[clientIndx]);
+            clients[clientIndx] = 0;
             close(client_sock);
-            queueDisplay(&msgQ);
             break;
 
         }
-        
-        printf("Client: %s\n", buffer);
-        queuePush(&msgQ,buffer);
+        else{
+            printf("Client: %s\n", buffer);
+            queuePush(&msgQ,buffer);
+        }
 
         
     }
@@ -48,7 +82,7 @@ int main(){
 
     // init bufferQueue
 
-    msgQ = queueCreate(1024); 
+    msgQ = queueCreate(BUFFER_SIZE); 
 
 
     char *ip = SERVER_IP;
@@ -91,7 +125,9 @@ int main(){
     listen(server_sock,MAX_CONNECTION);
     printf("[+] Listening for Connections...\n");
 
-
+    // send msg thread
+    pthread_t send_msg_thread;
+    pthread_create(&send_msg_thread,NULL,&send_msg,NULL);
 
     while(1){
 
@@ -105,14 +141,12 @@ int main(){
 
         printf("[+] new client connected.\n");
 
-        pthread_t recv_msg_thread,send_msg_thread;
+        pthread_t recv_msg_thread;
 
         int *pclient = malloc(sizeof(int));
         *pclient = client_sock;
         pthread_create(&recv_msg_thread,NULL,&recv_msg,pclient);    
-        // pthread_join(recv_msg_thread,NULL);
 
-        printf("dasdasd\n");
 
         /* 
             -store all client in an array of max connections length
